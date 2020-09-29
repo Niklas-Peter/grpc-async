@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package de.niklaspeter;
+
+option java_multiple_files = true;
+
+service MyService {
+  rpc MyServiceMethodA(stream Event) returns (Confirmation);
+  rpc MyServiceMethodB(Event) returns (Confirmation);
+
+  rpc OtherServiceMethod(Event) returns (Confirmation);
+}
+
+message Event {
+  string data = 1;
+}
+
+message Confirmation {
+
+}
+
