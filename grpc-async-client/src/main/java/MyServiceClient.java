@@ -25,11 +25,6 @@ public class MyServiceClient {
     }
 
     @SneakyThrows
-    public void shutdown() {
-        channel.awaitTermination(5, TimeUnit.MINUTES);
-    }
-
-    @SneakyThrows
     public void myServiceMethodA() {
         log.info("myServiceMethodA(): started.");
         var writeConnection = stub.myServiceMethodA(new LoggingStreamObserver());
@@ -45,6 +40,11 @@ public class MyServiceClient {
 
     private Event createEvent() {
         return Event.newBuilder().setData(UUID.randomUUID().toString()).build();
+    }
+
+    @SneakyThrows
+    public void shutdown() {
+        channel.awaitTermination(5, TimeUnit.MINUTES);
     }
 
     private static class LoggingStreamObserver implements StreamObserver<Confirmation> {

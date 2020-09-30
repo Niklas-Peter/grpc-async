@@ -5,15 +5,11 @@ import io.grpc.stub.StreamObserver;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousFileChannel;
-import java.nio.channels.CompletionHandler;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 public class MySyncService extends MyServiceGrpc.MyServiceImplBase {
@@ -25,22 +21,7 @@ public class MySyncService extends MyServiceGrpc.MyServiceImplBase {
         log.info(responseObserver + ": Acquiring lock ...");
         if (!lock.tryAcquire(10, TimeUnit.SECONDS)) {
             log.warn(responseObserver + ": Lock acquire timeout exceeded");
-            return new StreamObserver<>() {
-                @Override
-                public void onNext(Event event) {
-
-                }
-
-                @Override
-                public void onError(Throwable throwable) {
-
-                }
-
-                @Override
-                public void onCompleted() {
-
-                }
-            };
+            return new NoOpEventStreamObserver(); // Only to prevent exceptions in the log.
         }
 
         log.info(responseObserver + ": Acquired lock.");
@@ -67,7 +48,8 @@ public class MySyncService extends MyServiceGrpc.MyServiceImplBase {
             public void onCompleted() {
                 log.info(responseObserver + ": Received complete.");
 
-                store(events.toArray(Event[]::new)).handle((unused, throwable) -> {
+                var storageLibrary = new StorageLibrary();
+                storageLibrary.store(events.toArray(Event[]::new)).handle((unused, throwable) -> {
                     log.info(responseObserver + ": Store completed.");
 
                     responseObserver.onNext(Confirmation.newBuilder().build());
@@ -93,7 +75,8 @@ public class MySyncService extends MyServiceGrpc.MyServiceImplBase {
             throw new TimeoutException("The lock acquire timeout exceeded.");
 
         // Requires exclusive access to a shared resource and uses async I/O.
-        store(event).handle((unused, throwable) -> {
+        var storageLibrary = new StorageLibrary();
+        storageLibrary.store(event).handle((unused, throwable) -> {
             responseObserver.onNext(Confirmation.newBuilder().build());
             responseObserver.onCompleted();
 
@@ -103,48 +86,28 @@ public class MySyncService extends MyServiceGrpc.MyServiceImplBase {
         });
     }
 
-    // This code is actually in a library, which can not be changed.
-    @SneakyThrows
-    private CompletableFuture<Void> store(Event... events) {
-        var fileName = File.createTempFile("grpc-async", "").toPath();
-        var fileChannel = AsynchronousFileChannel.open(
-                fileName,
-                StandardOpenOption.WRITE
-        );
-
-        var serializedEvents = serializeEvents(events);
-
-        var completableFuture = new CompletableFuture<Void>();
-        fileChannel.write(serializedEvents, 0, null, new CompletionHandler<>() {
-            @Override
-            public void completed(Integer result, Object attachment) {
-                completableFuture.complete(null);
-            }
-
-            @Override
-            public void failed(Throwable exc, Object attachment) {
-                completableFuture.completeExceptionally(exc);
-            }
-        });
-
-        return completableFuture.thenApply(unused -> {
-            try {
-                fileChannel.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            return null;
-        });
-    }
-
-    private ByteBuffer serializeEvents(Event[] events) {
-        return ByteBuffer.wrap(new byte[]{42});
-    }
 
     @Override
     public void otherServiceMethod(Event request, StreamObserver<Confirmation> responseObserver) {
         // Do something independent from the other service methods.
         responseObserver.onNext(Confirmation.newBuilder().build());
         responseObserver.onCompleted();
+    }
+
+    private static class NoOpEventStreamObserver implements StreamObserver<Event> {
+        @Override
+        public void onNext(Event event) {
+
+        }
+
+        @Override
+        public void onError(Throwable throwable) {
+
+        }
+
+        @Override
+        public void onCompleted() {
+
+        }
     }
 }
